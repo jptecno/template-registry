@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "templates": [
+    {
+      "id": "api-nodejs-typescript",
+      "name": "API Node.js + TypeScript",
+      "description": "Fastify, PostgreSQL, Kysely, Vitest e Biome.",
+      "repository": "jptecno/template-api-nodejs-typescript",
+      "version": "v0.1.0",
+      "ref": "v0.1.0"
+    }
+  ]
+}
