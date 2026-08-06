@@ -1,0 +1,23 @@
+rules:
+  - id: unsafe-child-process-exec
+    message: Evite executar comandos shell construídos dinamicamente; use executáveis e argumentos fixos.
+    severity: ERROR
+    languages: [javascript]
+    patterns:
+      - pattern-inside: |
+          import { ..., $EXEC, ... } from 'node:child_process';
+          ...
+      - metavariable-regex:
+          metavariable: $EXEC
+          regex: ^(exec|execSync)$
+      - pattern: $EXEC($COMMAND, ...)
+      - pattern-not: $EXEC('...', ...)
+      - pattern-not: $EXEC("...", ...)
+    paths:
+      include:
+        - /scripts/*.js
+        - /scripts/*.mjs
+        - /unsafe-child-process.test.js
+    metadata:
+      confidence: HIGH
+      category: security
