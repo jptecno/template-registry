@@ -4,6 +4,7 @@ import {
   analyzeRegistryPatch,
   evaluatePullRequest,
 } from './scripts/danger/pr-policies.mjs';
+import { reportFindings } from './scripts/danger/report-findings.mjs';
 
 const pullRequest = danger.github.pr;
 const files = [
@@ -25,10 +26,4 @@ const results = evaluatePullRequest({
   registryChanges: analyzeRegistryPatch(registryDiff?.patch),
 });
 
-for (const message of results.failures) {
-  fail(message);
-}
-
-for (const message of results.warnings) {
-  warn(message);
-}
+reportFindings(results, { fail, warn });
