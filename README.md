@@ -48,3 +48,7 @@ Não use branches como `main` ou `develop` em `ref`. Tags são referências mut�
 ## Evolução do contrato
 
 O contrato futuro com `commit` e `archiveSha256` está especificado em [`docs/future-registry-contract.md`](./docs/future-registry-contract.md). Esses campos ainda não são obrigatórios nem são interpretados pelo validador atual.
+
+## Proteção das branches
+
+As branches `main` e `development` possuem rulesets ativos no GitHub. Cada uma exige pull request com uma aprovação e resolução de todas as conversas antes do merge. Os rulesets também bloqueiam exclusão da branch e force push. Não há checks obrigatórios configurados neste momento.
