@@ -1,0 +1,23 @@
+name: Semgrep workflow fixtures
+
+# ruleid: github-actions-pull-request-target
+pull_request_target:
+  types: [opened]
+
+jobs:
+  unsafe:
+    runs-on: ubuntu-latest
+    steps:
+      # ruleid: github-actions-unpinned-third-party-action
+      - uses: actions/checkout@v4
+      # ruleid: github-actions-unpinned-third-party-action
+      - uses: reviewdog/action-setup@master
+  safe:
+    runs-on: ubuntu-latest
+    steps:
+      # ok: github-actions-unpinned-third-party-action
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      # ok: github-actions-unpinned-third-party-action
+      - uses: ./local-action
+      # ok: github-actions-unpinned-third-party-action
+      - uses: docker://alpine:3.22
