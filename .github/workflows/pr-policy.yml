@@ -26,12 +26,24 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.sha }}
 
+      - name: Check trusted Dangerfile
+        id: dangerfile
+        run: |
+          if [[ -f dangerfile.mjs ]]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo '::notice::Danger JS será ativado após este workflow chegar à branch base.'
+          fi
+
       - name: Set up Node.js
+        if: steps.dangerfile.outputs.available == 'true'
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
 
       - name: Review pull request policies
+        if: steps.dangerfile.outputs.available == 'true'
         env:
           DANGER_GITHUB_API_TOKEN: ${{ github.token }}
         run: npx --yes danger@13.0.10 ci --dangerfile dangerfile.mjs
