@@ -1,48 +1,71 @@
-# Revisão automatizada do registry — validação
+# Validação independente final — revisão automatizada do registry
 
 **Data**: 2026-08-06
 **Spec**: `.specs/features/automated-review/spec.md`
-**Diff verificado**: `dc977b0..de62377`
-**Verificador**: revisão fresh-eyes local, sem subagente por restrição explícita
+**Diff range**: `origin/development..HEAD`
+**HEAD**: `3ea5fc0` — `test(danger): comprova bloqueio e aviso do adaptador`
+**Verifier**: independente (autor ≠ verificador)
+**Veredito**: ✅ PASS
 
-## Resultado por requisito
+## Escopo e commits
 
-| Requisito                 | Resultado | Evidência                                                                                                                                                                                                                 |
-| ------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| AR-01 — IDs únicos        | ✅        | `tests/validate-registry.test.mjs:31` — `assert.throws(...)` exige o erro exato de ID duplicado.                                                                                                                          |
-| AR-02 — validação remota  | ✅        | `tests/validate-remote-templates.test.mjs:33` valida as quatro URLs; `:44`, `:53`, `:62`, `:71` exigem erros de repo/tag/archive/manifesto; `:83` exige erro para ID divergente. A execução real validou a entrada atual. |
-| AR-03 — Semgrep/reviewdog | ✅        | `.semgrep/rules/dangerous-workflow.test.yaml:3` e `:11` cobrem evento/Action; `.semgrep/rules/unsafe-child-process.test.js:5` cobre comando dinâmico. `semgrep --test`: 3/3; scan real: zero findings.                    |
-| AR-04 — Danger            | ✅        | `tests/pr-policies.test.mjs:43`, `:56`, `:63`, `:82`, `:94`, `:111` e `:131` verificam resultados exatos para políticas e warnings.                                                                                       |
-| AR-05 — PR-Agent          | ✅        | `.github/workflows/ai-review.yml:6` limita paths, `:20` ignora drafts/forks, `:26` mantém advisory e não há checkout/run; `.pr_agent.toml:13` limita foco e proíbe execução; telemetria desligada em `ai-review.yml:31`.  |
+T1–T5 estão concluídas. A branch está 6 commits à frente de `origin/development`; os commits são atômicos por etapa e usam Conventional Commits. Antes deste relatório, a implementação estava limpa e somente o `validation.md` anterior já aparecia modificado. Após a sobrescrita solicitada, somente este relatório deve permanecer modificado.
 
-## Gates
+## Requisitos e evidências
 
-- `node --test tests/*.test.mjs`: **15 passaram, 0 falharam, 0 ignorados**.
-- `node scripts/validate-registry.mjs`: **1 template válido**.
-- `node scripts/validate-remote-templates.mjs`: **1 template remoto válido**.
-- `semgrep --test .semgrep/rules`: **3/3 regras testadas**.
-- Semgrep em `.github/workflows` e `scripts`: **0 findings bloqueantes**.
-- `actionlint` 1.7.7 em todos os workflows: **0 diagnósticos**.
-- TOML do PR-Agent, sintaxe Node e `git diff --check`: **válidos**.
+| Requisito | Evidência independente                                                                                                                                                             | Resultado |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| AR-01     | `scripts/validate-registry.mjs` rejeita IDs duplicados; os testes afirmam catálogo válido e erro de duplicidade.                                                                   | ✅ PASS   |
+| AR-02     | O validador verifica repo, tag, archive, `template.json` raiz e ID sem instalar/buildar/executar template; testes cobrem sucesso e cinco falhas; execução real validou 1 template. | ✅ PASS   |
+| AR-03     | Regras Semgrep cobrem workflows e scripts perigosos; 3/3 fixtures; workflow publica SARIF via reviewdog quando seguro e reaplica o status bloqueante.                              | ✅ PASS   |
+| AR-04     | Testes de políticas cobrem failures/warnings; `dangerfile.mjs` delega a `reportFindings`; `tests/report-findings.test.mjs:7-31` afirma `fail`, `warn` e chamadas negativas.        | ✅ PASS   |
+| AR-05     | PR-Agent limita paths, ignora drafts/forks, não faz checkout, desliga telemetria e usa `continue-on-error`; instruções proíbem execução de código.                                 | ✅ PASS   |
+
+**Spec-anchored check**: 5/5 requisitos atendidos, sem gap de precisão bloqueante.
+
+## Gates reexecutados
+
+- Testes Node: ✅ 17/17, 0 skipped.
+- `node scripts/validate-registry.mjs`: ✅ `Registry válido: 1 template(s)`.
+- `node scripts/validate-remote-templates.mjs`: ✅ `Templates remotos válidos: 1`.
+- `SEMGREP_SEND_METRICS=off uvx --from semgrep==1.172.0 semgrep --test ...`: ✅ 3/3.
+- Scan Semgrep local: ✅ 0 findings.
+- `actionlint@v1.7.7`: ✅ sem diagnósticos.
+- `git diff --check origin/development..HEAD`: ✅.
+
+## Validação remota mínima
+
+- O catálogo exige `owner/repo`, tag SemVer e igualdade `version/ref` antes da consulta remota.
+- Para cada entrada, são feitas somente consultas de repo, ref de tag, endpoint do archive e `template.json` raw.
+- Bodies de repo/tag/archive são cancelados; apenas o manifesto JSON é parseado.
+- Não há checkout, extração, instalação, build ou execução de templates.
+- A execução externa real, sem secret, confirmou 1 template acessível e consistente.
 
 ## Sensor de discriminação
 
-| Mutação em cópia descartável              | Resultado                                       |
-| ----------------------------------------- | ----------------------------------------------- |
-| Remove rejeição de ID duplicado           | ✅ Morta pelo teste de duplicidade.             |
-| Inverte comparação do ID remoto           | ✅ Morta pelos testes de sucesso e divergência. |
-| Inverte regra de origem de PR para `main` | ✅ Morta pelos testes de origem e promoção.     |
+Executado em `/tmp/zed-final-verifier-registry`, sem mutar o worktree real.
 
-**Resultado**: 3/3 mutações mortas.
+| Mutação                                                                                     | Teste                            | Resultado                                                               |
+| ------------------------------------------------------------------------------------------- | -------------------------------- | ----------------------------------------------------------------------- |
+| `scripts/danger/report-findings.mjs`: `reporters.fail(message)` → `reporters.warn(message)` | `tests/report-findings.test.mjs` | ✅ KILLED: exit 1; 1/2 testes falhou porque `fail` não recebeu chamada. |
 
-## Qualidade e limitações
+**Sensor**: 1/1 killed — ✅ PASS.
 
-- Mudanças restritas ao registry, scripts e automações solicitadas; sem pacote/schema compartilhado, matriz da CLI ou execução de templates.
-- Actions fixadas por SHA; sem `pull_request_target`; workflows têm permissões mínimas, timeout e concurrency.
-- A validação remota depende da disponibilidade e dos limites da API pública do GitHub; `GITHUB_TOKEN` reduz risco de rate limit na CI.
-- PR-Agent depende do secret `OPENAI_KEY`, é advisory e não roda em forks/drafts.
-- Danger é obtido do npm em versão exata durante o job; não há lockfile porque o repositório não é um pacote Node.
+## Segurança operacional
 
-## Veredito
+- Semgrep/reviewdog preserva o bloqueio após a publicação e omite reviewdog em forks.
+- Forks não executam Danger/PR-Agent nem recebem secrets.
+- Danger diferencia failures e warnings com prova discriminante no adaptador.
+- PR-Agent é advisory, restrito por paths e a PR interno não draft, sem checkout nem execução de código.
 
-**PASS** — 5/5 requisitos cobertos, sem lacunas de precisão e com gates/sensor aprovados.
+## Limitações não bloqueantes
+
+- PR-Agent e Danger não foram executados contra um PR real: exigem contexto/API do GitHub e, para PR-Agent, `OPENAI_KEY`. A configuração e o comportamento de adaptação foram verificados estaticamente e por testes locais.
+- O primeiro PR que introduz `pr-policy.yml` faz checkout da base, que ainda não contém o Dangerfile novo; é uma limitação de bootstrap, não dos PRs após o merge.
+- O workflow Danger do registry baixa `danger@13.0.10` em runtime via npm; a versão é fixa, mas a disponibilidade do registry npm continua sendo dependência operacional.
+
+## Resumo
+
+**Overall**: ✅ Ready
+
+IDs únicos, validação remota mínima, Semgrep/reviewdog bloqueante, Danger fail/warn, segurança de forks e PR-Agent advisory estão comprovados. O mutante `fail→warn` anteriormente sobrevivente agora é morto pelo teste do adaptador.
