@@ -20,5 +20,8 @@ jobs:
         with:
           node-version: 24
 
+      - name: Test registry validator
+        run: node --test scripts/validate-registry.test.mjs
+
       - name: Validate registry schema
         run: node scripts/validate-registry.mjs
