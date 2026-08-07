@@ -1,17 +1,21 @@
 ## Resumo
 
-<!-- Explique objetivamente a alteração. -->
+<!-- Explique objetivamente a alteração e o comportamento alterado. -->
 
-## Contexto da alteração do registry
+## Contrato, risco e segurança
 
-<!-- Para registry.json: descreva compatibilidade com a CLI e confiança na origem/tag. -->
+- [ ] Avaliei compatibilidade do registry/CLI/template, quando aplicável.
+- [ ] Não introduzi secrets nem execução de conteúdo de template no gate estrutural.
+- [ ] Alterações em registry, schemas, assinatura, paths de harness ou workflows receberam revisão de segurança.
 
 ## Validação
 
-- [ ] Testes e validadores locais executados
+- [ ] `npm ci`
+- [ ] `npm run check`
+- [ ] `git diff --check`
 
-## Homologação, release e produção
+## Publicação e rollback
 
-- Ambiente de homologação e resultado:
+- Publicação ou migração necessária:
 - Impacto de produção:
-- Plano de rollback:
+- Plano de rollback (roll-forward com nova revisão, se aplicável):

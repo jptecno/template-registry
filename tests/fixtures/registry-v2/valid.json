@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 2,
+  "revision": 1,
+  "publishedAt": "2026-08-07T12:00:00Z",
+  "templates": [
+    {
+      "id": "api-nodejs-typescript",
+      "name": "API Node.js + TypeScript",
+      "description": "Template de API.",
+      "repository": "jptecno/template-api-nodejs-typescript",
+      "versions": [
+        {
+          "version": "v1.0.0",
+          "ref": "v1.0.0",
+          "commit": "0123456789abcdef0123456789abcdef01234567",
+          "status": "active"
+        }
+      ]
+    }
+  ]
+}
