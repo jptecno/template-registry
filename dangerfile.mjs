@@ -1,10 +1,8 @@
-import { danger, fail, warn } from 'danger';
-
 import {
   analyzeRegistryPatch,
   evaluatePullRequest,
-} from './scripts/danger/pr-policies.mjs';
-import { reportFindings } from './scripts/danger/report-findings.mjs';
+} from "./scripts/danger/pr-policies.mjs";
+import { reportFindings } from "./scripts/danger/report-findings.mjs";
 
 const pullRequest = danger.github.pr;
 const files = [
@@ -12,8 +10,8 @@ const files = [
   ...danger.git.modified_files,
   ...danger.git.deleted_files,
 ];
-const registryDiff = files.includes('registry.json')
-  ? await danger.git.diffForFile('registry.json')
+const registryDiff = files.includes("registry.json")
+  ? await danger.git.diffForFile("registry.json")
   : null;
 const results = evaluatePullRequest({
   title: pullRequest.title,
