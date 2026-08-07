@@ -1,4 +1,12 @@
-/.github/workflows/** @marcelocmenezes
 /registry.json @marcelocmenezes
-/scripts/** @marcelocmenezes
-/docs/** @marcelocmenezes
+/schemas/ @marcelocmenezes
+/scripts/validate-registry.mjs @marcelocmenezes
+/scripts/ @marcelocmenezes
+/package.json @marcelocmenezes
+/package-lock.json @marcelocmenezes
+/biome.json @marcelocmenezes
+/lefthook.yml @marcelocmenezes
+/.github/ @marcelocmenezes
+/.agents/ @marcelocmenezes
+/AGENTS.md @marcelocmenezes
+/CLAUDE.md @marcelocmenezes

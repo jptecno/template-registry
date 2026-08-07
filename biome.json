@@ -1,0 +1,26 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.3.12/schema.json",
+  "files": {
+    "includes": [
+      "**",
+      "!node_modules",
+      "!coverage",
+      "!BACKLOG.md",
+      "!README.md",
+      "!docs",
+      "!.semgrep",
+      "!dangerfile.mjs",
+      "!scripts/danger",
+      "!tests/pr-policies.test.mjs",
+      "!tests/report-findings.test.mjs"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2
+  },
+  "linter": {
+    "enabled": true
+  }
+}
