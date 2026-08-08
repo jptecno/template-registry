@@ -14,4 +14,4 @@ Execute `npm run check` antes de enviar alterações. O fluxo é branch curta �
 
 ## Fases futuras
 
-O job de pull request `validate-registry-structure` é um gate bloqueante e executa exclusivamente o código e as dependências do checkout confiável da base, lendo do candidato apenas os arquivos de dados indicados. Danger, Semgrep e workflows adicionais de proteção do harness serão implementados em fase posterior; não são gates deste worktree.
+O job de pull request `validate-registry-structure` é um gate bloqueante após o validador chegar à branch base; durante a PR que o introduz, ele emite um notice e não executa instalação nem validação. Quando disponível, executa exclusivamente o código e as dependências do checkout confiável da base, lendo do candidato apenas os arquivos de dados indicados. Danger, Semgrep e workflows adicionais de proteção do harness serão implementados em fase posterior; não são gates deste worktree.
