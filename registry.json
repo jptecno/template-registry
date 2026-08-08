@@ -1,13 +1,35 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "revision": 3,
+  "publishedAt": "2026-08-08T16:50:54Z",
   "templates": [
     {
       "id": "api-nodejs-typescript",
       "name": "API Node.js + TypeScript",
       "description": "Fastify, PostgreSQL, Kysely, Vitest e Biome.",
       "repository": "jptecno/template-api-nodejs-typescript",
-      "version": "v0.1.0",
-      "ref": "v0.1.0"
+      "versions": [
+        {
+          "version": "v0.1.0",
+          "ref": "v0.1.0",
+          "commit": "40feae0d0ecd789b5fd3b7b8bc1ba09b6a33a340",
+          "status": "deprecated",
+          "statusReason": "Substituída pela v0.2.0, que atualiza a toolchain e incorpora endurecimentos de segurança."
+        },
+        {
+          "version": "v0.2.0",
+          "ref": "v0.2.0",
+          "commit": "d437e631948a6e0c51cf544ddcb0943cb92aa389",
+          "status": "deprecated",
+          "statusReason": "Substituída pela v0.3.2, que corrige a validação do contrato no projeto renderizado."
+        },
+        {
+          "version": "v0.3.2",
+          "ref": "v0.3.2",
+          "commit": "e5ae4c81f2e95fd57e195bd96d4ac0558ee3eb37",
+          "status": "active"
+        }
+      ]
     }
   ]
 }

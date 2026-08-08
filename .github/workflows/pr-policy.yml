@@ -58,10 +58,16 @@ jobs:
         with:
           node-version: 24
 
+      - name: Install trusted Danger dependencies
+        if: >-
+          steps.dangerfile.outputs.available == 'true' &&
+          steps.policy.outputs.changed == 'false'
+        run: npm ci --ignore-scripts
+
       - name: Review pull request policies
         if: >-
           steps.dangerfile.outputs.available == 'true' &&
           steps.policy.outputs.changed == 'false'
         env:
           DANGER_GITHUB_API_TOKEN: ${{ github.token }}
-        run: npx --yes danger@13.0.10 ci --dangerfile dangerfile.mjs
+        run: ./node_modules/.bin/danger ci --dangerfile dangerfile.mjs

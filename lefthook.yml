@@ -1,0 +1,13 @@
+pre-commit:
+  commands:
+    biome:
+      glob: '*.{js,mjs,json,yml,yaml,md}'
+      run: npx biome check --no-errors-on-unmatched {staged_files}
+    registry-contract:
+      glob: '{registry.json,schemas/**,scripts/**}'
+      run: npm run test && npm run validate
+
+pre-push:
+  commands:
+    check:
+      run: npm run check

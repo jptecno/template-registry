@@ -1,0 +1,22 @@
+{
+  "name": "@jptecno/template-registry",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "prepare": "lefthook install",
+    "format": "biome format --write .",
+    "lint": "biome lint .",
+    "test": "node --test",
+    "validate": "node scripts/validate-registry.mjs",
+    "check": "npm run lint && biome format . && npm run test && npm run validate"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.3.12",
+    "ajv": "8.17.1",
+    "danger": "13.0.10",
+    "lefthook": "1.12.4"
+  }
+}

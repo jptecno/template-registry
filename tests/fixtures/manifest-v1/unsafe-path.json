@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "api-nodejs-typescript",
+  "name": "API Node.js + TypeScript",
+  "description": "Template de API.",
+  "repository": "jptecno/template-api-nodejs-typescript",
+  "variables": [],
+  "render": { "include": ["../secret"] },
+  "toolchain": {
+    "ecosystem": "node",
+    "requirements": [{ "tool": "node", "minimumVersion": "24" }],
+    "steps": {
+      "test": {
+        "command": "npm",
+        "args": ["test"],
+        "dependsOn": [],
+        "recommended": true
+      }
+    }
+  }
+}
