@@ -6,7 +6,9 @@ Catálogo público e versionado dos templates consumidos pelo `@jptecno/cli`.
 
 A branch `development` carrega a preparação do contrato `schemaVersion: 2`. Esta preparação **não ativa** o contrato para consumidores: o endpoint atual da CLI continua sendo o `registry.json` v1 servido pelo GitHub Raw da branch `main`.
 
-A integração ao workflow permanece uma ativação separada e pendente. Não há nesta etapa publicação em GitHub Pages, deploy de assinaturas, ativação de endpoint oficial da CLI, URL ou qualquer validação de rede. A migração para consumidores somente poderá ser coordenada após C01 e R07–R09 e C02; até então, `main` não pode ser promovida com base nesta preparação.
+O gate R07 de integração está ativo em pull requests para versões `active` novas ou alteradas: ele executa exclusivamente o wrapper e as dependências do checkout confiável da base e lê do candidato somente `registry.json`. A própria PR de ativação faz bootstrap seguro: como a base ainda não possui o wrapper, o job emite um notice e não instala dependências, baixa dados candidatos nem executa integração. O job não recebe secrets, permissões de escrita, cache ou artefatos.
+
+O risco residual é o conteúdo público do template durante os gates `npm` e Docker de uma versão `active` efetivamente alterada; ele fica limitado ao runner efêmero, ambiente PATH-only, limites de tempo/saída, rede HTTP de health exclusivamente loopback e sem credenciais encaminhadas. Não há nesta etapa publicação em GitHub Pages, deploy de assinaturas, ativação de endpoint oficial da CLI ou URL pública. A migração para consumidores somente poderá ser coordenada após C01 e R07–R09 e C02; até então, `main` não pode ser promovida com base nesta preparação.
 
 ## Catálogo v2 em desenvolvimento
 
@@ -75,8 +77,9 @@ O comando de entrada é `node scripts/validate-registry.mjs`; ele valida o `regi
 1. Garanta que o template passa em sua validação local e CI.
 2. Publique uma tag SemVer, por exemplo `v1.0.0`, e registre o SHA do commit correspondente.
 3. Atualize a versão no catálogo, seu estado e a próxima `revision`.
-4. Execute `npm run check`.
-5. Abra um pull request para `development`.
+4. O gate de PR executará a integração isolada somente se a identidade `id`/`repository`/`ref`/`commit` da versão `active` mudar.
+5. Execute `npm run check`.
+6. Abra um pull request para `development`.
 
 A publicação/ativação para consumidores e a promoção para `main` permanecem bloqueadas até a conclusão coordenada de C01, R07, R08, R09 e C02.
 
