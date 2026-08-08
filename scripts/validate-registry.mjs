@@ -5,96 +5,8 @@ import registryV2Schema from "../schemas/template-registry-v2.schema.json" with 
   type: "json",
 };
 
-const requiredFields = [
-  "id",
-  "name",
-  "description",
-  "repository",
-  "version",
-  "ref",
-];
-
-const repositoryPattern = /^[\w.-]+\/[\w.-]+$/;
-const immutableVersionPattern =
-  /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
-
 const ajv = new Ajv({ allErrors: true, strict: true });
 const validateRegistryV2Schema = ajv.compile(registryV2Schema);
-
-export function validateRegistry(registry) {
-  if (
-    !isRecord(registry) ||
-    registry.schemaVersion !== 1 ||
-    !Array.isArray(registry.templates)
-  ) {
-    throw new Error(
-      "registry.json deve ser um objeto com schemaVersion 1 e templates como array",
-    );
-  }
-
-  if (registry.templates.length === 0) {
-    throw new Error("registry.json deve conter ao menos um template");
-  }
-
-  const ids = new Set();
-
-  for (const template of registry.templates) {
-    validateTemplate(template, ids);
-  }
-
-  return registry.templates.length;
-}
-
-function validateTemplate(template, ids) {
-  if (!isRecord(template)) {
-    throw new Error(
-      "Cada template deve ser um objeto, não um array ou valor primitivo",
-    );
-  }
-
-  const values = Object.create(null);
-
-  for (const field of requiredFields) {
-    const value = template[field];
-
-    if (typeof value !== "string" || value.trim() === "") {
-      throw new Error(
-        `Template possui campo inválido: ${field} deve ser uma string não vazia`,
-      );
-    }
-
-    values[field] = value;
-  }
-
-  if (!isKebabCase(values.id)) {
-    throw new Error(
-      `O identificador do template deve usar kebab-case: ${values.id}`,
-    );
-  }
-
-  if (ids.has(values.id)) {
-    throw new Error(
-      `O catálogo possui identificadores de template duplicados: ${values.id}`,
-    );
-  }
-
-  ids.add(values.id);
-
-  if (!repositoryPattern.test(values.repository)) {
-    throw new Error(
-      `O repositório do template possui formato inválido (organização/repositório): ${values.repository}`,
-    );
-  }
-
-  if (
-    !immutableVersionPattern.test(values.ref) ||
-    values.version !== values.ref
-  ) {
-    throw new Error(
-      `O template deve usar a mesma tag SemVer estrita e imutável em version e ref: ${values.id}`,
-    );
-  }
-}
 
 export function validateRegistryV2(registry) {
   validateWithSchema(validateRegistryV2Schema, registry, "registry v2");
@@ -104,6 +16,12 @@ export function validateRegistryV2(registry) {
 }
 
 export function validateRegistryV2Semantics(registry) {
+  if (!isValidRfc3339Utc(registry.publishedAt)) {
+    throw new Error(
+      "publishedAt deve ser uma data e hora RFC3339 UTC semanticamente válida",
+    );
+  }
+
   const templateIds = new Set();
 
   for (const template of registry.templates) {
@@ -169,12 +87,25 @@ export function validateWithSchema(validate, document, label = "documento") {
   }
 }
 
-function isKebabCase(value) {
-  return /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value);
-}
+function isValidRfc3339Utc(value) {
+  const parts =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/.exec(value);
 
-function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  if (parts === null) {
+    return false;
+  }
+
+  const date = new Date(value);
+
+  return (
+    !Number.isNaN(date.getTime()) &&
+    date.getUTCFullYear() === Number(parts[1]) &&
+    date.getUTCMonth() + 1 === Number(parts[2]) &&
+    date.getUTCDate() === Number(parts[3]) &&
+    date.getUTCHours() === Number(parts[4]) &&
+    date.getUTCMinutes() === Number(parts[5]) &&
+    date.getUTCSeconds() === Number(parts[6])
+  );
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -183,7 +114,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       new URL("../registry.json", import.meta.url),
       "utf8",
     );
-    const count = validateRegistry(JSON.parse(content));
+    const count = validateRegistryV2(JSON.parse(content));
     console.log(`Registry válido: ${count} template(s)`);
   } catch (error) {
     console.error(
