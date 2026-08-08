@@ -1,0 +1,110 @@
+name: Publish signed registry
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - registry.json
+      - schemas/template-registry-v2.schema.json
+      - schemas/template-manifest-v1.schema.json
+      - scripts/ed25519-detached-envelope.mjs
+      - scripts/sign-envelope.mjs
+      - .github/workflows/publish-signed-registry.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-signed-registry
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout approved main
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      - name: Install trusted dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Validate registry
+        run: npm run validate
+
+  sign:
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: registry-signing
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout approved main
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      - name: Install trusted dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Sign registry bytes
+        env:
+          REGISTRY_SIGNING_KEY_ID: ${{ vars.REGISTRY_SIGNING_KEY_ID }}
+          REGISTRY_SIGNING_PRIVATE_KEY: ${{ secrets.REGISTRY_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [[ -z "$REGISTRY_SIGNING_KEY_ID" ]]; then
+            echo '::error::Configure a variável pública REGISTRY_SIGNING_KEY_ID antes de publicar.'
+            exit 1
+          fi
+          if [[ -z "$REGISTRY_SIGNING_PRIVATE_KEY" ]]; then
+            echo '::error::O secret REGISTRY_SIGNING_PRIVATE_KEY não está disponível no environment protegido.'
+            exit 1
+          fi
+
+          key_path="$RUNNER_TEMP/registry-signing-private-key.pem"
+          umask 077
+          trap 'rm -f "$key_path"' EXIT
+          printf '%s' "$REGISTRY_SIGNING_PRIVATE_KEY" > "$key_path"
+          node scripts/sign-envelope.mjs \
+            --key-id "$REGISTRY_SIGNING_KEY_ID" \
+            --private-key "$key_path" \
+            --payload registry.json \
+            --output registry.json.sig
+
+      - name: Assemble public artifact
+        run: |
+          mkdir -p public/schemas
+          cp registry.json registry.json.sig public/
+          cp schemas/template-registry-v2.schema.json public/schemas/
+          cp schemas/template-manifest-v1.schema.json public/schemas/
+
+      - name: Upload signed Pages artifact
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        with:
+          path: public
+
+  deploy:
+    needs: sign
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
+    steps:
+      - name: Deploy Pages artifact
+        id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
