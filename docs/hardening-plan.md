@@ -481,6 +481,12 @@ O gate `harness-change-approved` é obrigatório quando forem alterados `AGENTS.
 - detecta alteração indevida de schema publicado;
 - não possui secrets e usa apenas `contents: read`.
 
+#### R07b.1 — Fundação local do harness de integração
+
+A fundação confiável local do harness está implementada: seleciona deterministicamente apenas versões `active` cuja identidade lógica (`id`, `repository`, `ref`, `commit`) mudou em relação à base, valida a resolução de tag/commit por `git ls-remote` sem shell e faz o preflight de `template.json` pelo schema canônico. Ela não faz checkout, download, renderização, instalação ou execução de templates.
+
+A ativação em workflow/CI e as etapas de checkout, renderização e execução permanecem trabalho separado em um próximo PR. Portanto, R07 não está concluído nesta etapa.
+
 #### Job 2: integração isolada
 
 Para cada versão `active` alterada:
