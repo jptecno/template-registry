@@ -483,9 +483,9 @@ O gate `harness-change-approved` é obrigatório quando forem alterados `AGENTS.
 
 #### R07b.1 — Fundação local do harness de integração
 
-A fundação confiável local do harness está implementada: seleciona deterministicamente apenas versões `active` cuja identidade lógica (`id`, `repository`, `ref`, `commit`) mudou em relação à base, valida a resolução de tag/commit por `git ls-remote` sem shell e faz o preflight de `template.json` pelo schema canônico. Ela não faz checkout, download, renderização, instalação ou execução de templates.
+A fundação e o engine local confiável do harness estão implementados: selecionam deterministicamente apenas versões `active` cuja identidade lógica (`id`, `repository`, `ref`, `commit`) mudou em relação à base, validam a resolução de tag/commit por `git ls-remote` sem shell, fazem checkout exclusivamente pelo SHA declarado, preflight de `template.json`, cópia segura, renderização do profile fixo e os gates npm/Docker com seams injetáveis. O engine permanece local e não está ligado a workflow/CI.
 
-A ativação em workflow/CI e as etapas de checkout, renderização e execução permanecem trabalho separado em um próximo PR. Portanto, R07 não está concluído nesta etapa.
+A ativação em workflow/CI continua desabilitada e R07 permanece incompleto até que os dois jobs bloqueantes sejam ativados. O `registry.json` atual v0.1 continua legado e não pode ativar o fluxo de integração, assinatura ou Pages.
 
 #### Job 2: integração isolada
 
