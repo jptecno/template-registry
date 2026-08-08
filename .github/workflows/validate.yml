@@ -12,8 +12,10 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout candidate
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -25,3 +27,52 @@ jobs:
 
       - name: Run checks
         run: npm run check
+
+  validate-registry-structure:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout trusted base
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+
+      - name: Check trusted structural validator
+        id: validator
+        working-directory: base
+        run: |
+          if [[ -f scripts/validate-registry-pr.mjs ]]; then
+            echo 'available=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'available=false' >> "$GITHUB_OUTPUT"
+            echo '::notice::O gate estrutural será ativado após este workflow chegar à branch base.'
+          fi
+
+      - name: Checkout candidate data
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: candidate
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      - name: Install trusted dependencies
+        if: steps.validator.outputs.available == 'true'
+        working-directory: base
+        run: npm ci --ignore-scripts
+
+      - name: Validate candidate registry data with trusted base
+        if: steps.validator.outputs.available == 'true'
+        working-directory: base
+        run: >-
+          node scripts/validate-registry-pr.mjs
+          --base-registry registry.json
+          --candidate-registry ../candidate/registry.json
+          --base-schema schemas/template-registry-v2.schema.json
+          --candidate-schema ../candidate/schemas/template-registry-v2.schema.json
