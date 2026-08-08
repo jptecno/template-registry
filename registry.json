@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": 2,
-  "publishedAt": "2026-08-08T13:32:04Z",
+  "revision": 3,
+  "publishedAt": "2026-08-08T16:50:54Z",
   "templates": [
     {
       "id": "api-nodejs-typescript",
@@ -20,6 +20,13 @@
           "version": "v0.2.0",
           "ref": "v0.2.0",
           "commit": "d437e631948a6e0c51cf544ddcb0943cb92aa389",
+          "status": "deprecated",
+          "statusReason": "Substituída pela v0.3.2, que corrige a validação do contrato no projeto renderizado."
+        },
+        {
+          "version": "v0.3.2",
+          "ref": "v0.3.2",
+          "commit": "e5ae4c81f2e95fd57e195bd96d4ac0558ee3eb37",
           "status": "active"
         }
       ]
