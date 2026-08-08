@@ -680,7 +680,8 @@ export async function renderTrustedProfile(directory, manifest) {
   };
   await renderPackageJson(join(directory, "package.json"), values);
   await renderPackageLock(join(directory, "package-lock.json"), values);
-  await renderReadme(join(directory, "README.md"), values);
+  await renderTextFile(join(directory, ".env.example"), values);
+  await renderTextFile(join(directory, "README.md"), values);
 }
 
 function assertTrustedProfile(target, manifest) {
@@ -721,7 +722,7 @@ async function renderPackageLock(path, values) {
   await writeFile(path, `${JSON.stringify(document, null, 2)}\n`);
 }
 
-async function renderReadme(path, values) {
+async function renderTextFile(path, values) {
   const contents = await readFile(path, "utf8");
   await writeFile(path, renderTokens(contents, values));
 }
