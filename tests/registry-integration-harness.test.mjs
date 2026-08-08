@@ -380,7 +380,12 @@ async function withProfileTree(run) {
     prompt: "Descrição",
     required: false,
   });
-  manifest.render.include = ["package.json", "package-lock.json", "README.md"];
+  manifest.render.include = [
+    "package.json",
+    "package-lock.json",
+    ".env.example",
+    "README.md",
+  ];
   await Promise.all([
     writeFile(
       join(directory, "package.json"),
@@ -395,6 +400,10 @@ async function withProfileTree(run) {
         name: "{{projectName}}",
         packages: { "": { name: "{{projectName}}" } },
       }),
+    ),
+    writeFile(
+      join(directory, ".env.example"),
+      "PROJECT_NAME={{projectName}}\nDESCRIPTION={{description}}\n",
     ),
     writeFile(
       join(directory, "README.md"),
@@ -542,7 +551,7 @@ test("copia a árvore inteira, ignora .git e rejeita symlink fora de render.incl
   });
 });
 
-test("renderiza JSON estruturado e README exclusivamente com o profile confiável", async () => {
+test("renderiza JSON estruturado e arquivos de texto exclusivamente com o profile confiável", async () => {
   await withProfileTree(async ({ directory, manifest }) => {
     await renderTrustedProfile(directory, manifest);
     assert.deepEqual(
@@ -556,6 +565,10 @@ test("renderiza JSON estruturado e README exclusivamente com o profile confiáve
       JSON.parse(await readFile(join(directory, "package-lock.json"), "utf8"))
         .packages[""].name,
       "registry-harness-api",
+    );
+    assert.equal(
+      await readFile(join(directory, ".env.example"), "utf8"),
+      "PROJECT_NAME=registry-harness-api\nDESCRIPTION=API criada pelo registry integration harness\n",
     );
     assert.equal(
       await readFile(join(directory, "README.md"), "utf8"),
