@@ -75,7 +75,7 @@ A publicação/ativação para consumidores e a promoção para `main` permanece
 
 ## Schema
 
-O schema canônico está em [`schemas/template-registry-v2.schema.json`](./schemas/template-registry-v2.schema.json). Schemas publicados são imutáveis; propriedades que exigem relações entre registros são validadas no código semântico.
+O schema canônico está em [`schemas/template-registry-v2.schema.json`](./schemas/template-registry-v2.schema.json). Esse arquivo v2 está congelado pela política do repositório, inclusive para alterações de formatação; uma mudança incompatível exige outro arquivo com versão distinta. Propriedades que exigem relações entre registros são validadas no código semântico.
 
 ## Proteção das branches
 
