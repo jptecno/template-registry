@@ -485,7 +485,13 @@ O gate `harness-change-approved` é obrigatório quando forem alterados `AGENTS.
 
 A fundação e o engine local confiável do harness estão implementados: selecionam deterministicamente apenas versões `active` cuja identidade lógica (`id`, `repository`, `ref`, `commit`) mudou em relação à base, validam a resolução de tag/commit por `git ls-remote` sem shell, fazem checkout exclusivamente pelo SHA declarado, preflight de `template.json`, cópia segura, renderização do profile fixo e os gates npm/Docker com seams injetáveis. O engine permanece local e não está ligado a workflow/CI.
 
-A ativação em workflow/CI continua desabilitada e R07 permanece incompleto até que os dois jobs bloqueantes sejam ativados. O `registry.json` atual v0.1 continua legado e não pode ativar o fluxo de integração, assinatura ou Pages.
+#### R07b.2 — Ativação segura no workflow
+
+O job `validate-template-integration` está ativo somente para pull requests. Ele faz checkout do SHA da base sem credenciais persistidas e procura o wrapper confiável nela; quando a base ainda não o contém (a PR de bootstrap), emite notice e encerra sem instalar dependências nem baixar o candidato. Quando disponível, instala as dependências da base com `npm ci --ignore-scripts`, faz checkout do SHA candidato apenas como dados e executa o wrapper a partir da base.
+
+O wrapper possui argumentos fechados para os dois `registry.json`, valida ambos com o schema e regras confiáveis da base e encerra em no-op antes de resolver tags, fazer checkout, criar workspace ou invocar npm/Docker/HTTP quando nenhuma versão `active` mudou. Para alvos alterados, usa comandos sem shell, ambiente PATH-only para o template, timeout de 120 segundos e limite de 64 KiB; checkout confirma `HEAD` destacado no SHA declarado, Docker não permite privilégios/montagens/rede de host e o smoke HTTP só aceita loopback. O job não recebe secrets, permissões de escrita, cache ou artefatos.
+
+O risco residual é a execução do conteúdo público de uma versão `active` alterada nos gates npm/Docker, confinada ao runner efêmero e aos limites descritos. Assinaturas, schema/registry e Pages permanecem fora deste incremento.
 
 #### Job 2: integração isolada
 

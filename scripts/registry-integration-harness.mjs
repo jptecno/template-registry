@@ -105,7 +105,12 @@ export function createGitTagResolver({ runner = runGit } = {}) {
 }
 
 async function runGit(command, args) {
-  return execFile(command, args, { encoding: "utf8" });
+  return execFile(command, args, {
+    encoding: "utf8",
+    env: { PATH: process.env.PATH ?? "" },
+    timeout: PROCESS_TIMEOUT_MS,
+    maxBuffer: PROCESS_MAX_OUTPUT_BYTES,
+  });
 }
 
 function assertValidatedTarget(target) {
@@ -419,6 +424,115 @@ export function createProcessRunner({ runner = runProcess } = {}) {
   return (options) => runner(options.command, options.args, options);
 }
 
+export function createDockerAdapter({ runner = runProcess } = {}) {
+  return {
+    async run({ args, cwd, timeoutMs, maxOutputBytes }) {
+      assertTrustedDockerArgs(args);
+      return runner("docker", args, {
+        cwd,
+        env: { PATH: process.env.PATH ?? "" },
+        timeoutMs,
+        maxOutputBytes,
+      });
+    },
+    async cleanup({ container, image }) {
+      if (
+        container !== HARNESS_PROFILE.docker.container ||
+        image !== HARNESS_PROFILE.docker.image
+      ) {
+        throw new Error("A limpeza Docker exige recursos do profile confiável");
+      }
+      await cleanupQuietly(() =>
+        runner("docker", ["rm", "--force", "--volumes", container], {
+          env: { PATH: process.env.PATH ?? "" },
+          timeoutMs: PROCESS_TIMEOUT_MS,
+          maxOutputBytes: PROCESS_MAX_OUTPUT_BYTES,
+        }),
+      );
+      await cleanupQuietly(() =>
+        runner("docker", ["image", "rm", "--force", image], {
+          env: { PATH: process.env.PATH ?? "" },
+          timeoutMs: PROCESS_TIMEOUT_MS,
+          maxOutputBytes: PROCESS_MAX_OUTPUT_BYTES,
+        }),
+      );
+    },
+  };
+}
+
+function assertTrustedDockerArgs(args) {
+  const build = ["build", "--tag", HARNESS_PROFILE.docker.image, "."];
+  const run = [
+    "run",
+    "--detach",
+    "--rm",
+    "--name",
+    HARNESS_PROFILE.docker.container,
+    "--publish",
+    `127.0.0.1:${HARNESS_PROFILE.docker.hostPort}:${HARNESS_PROFILE.docker.containerPort}`,
+    "--cap-drop",
+    "ALL",
+    "--security-opt",
+    "no-new-privileges",
+    HARNESS_PROFILE.docker.image,
+  ];
+  if (
+    !Array.isArray(args) ||
+    ![build, run].some(
+      (expected) =>
+        args.length === expected.length &&
+        args.every((value, index) => value === expected[index]),
+    )
+  ) {
+    throw new Error("A execução Docker deve usar argumentos internos fixos");
+  }
+}
+
+export function createLoopbackHttpClient({ fetchImpl = fetch } = {}) {
+  return {
+    async get({ url, timeoutMs, maxOutputBytes }) {
+      const requestUrl = new URL(url);
+      if (
+        requestUrl.protocol !== "http:" ||
+        requestUrl.hostname !== "127.0.0.1" ||
+        requestUrl.pathname !== HARNESS_PROFILE.docker.healthPath
+      ) {
+        throw new Error(
+          "O smoke HTTP deve usar apenas o health loopback confiável",
+        );
+      }
+      const response = await fetchImpl(requestUrl, {
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      const body = await readBoundedJson(response, maxOutputBytes);
+      return { status: response.status, body };
+    },
+  };
+}
+
+async function readBoundedJson(response, maxOutputBytes) {
+  if (response.body === null)
+    throw new Error("A resposta HTTP não possui corpo");
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > maxOutputBytes) {
+        await reader.cancel();
+        throw new Error("A resposta HTTP excede o limite de saída");
+      }
+      chunks.push(value);
+    }
+    return JSON.parse(new TextDecoder().decode(Buffer.concat(chunks)));
+  } catch {
+    throw new Error("A resposta HTTP do smoke é inválida");
+  }
+}
+
 async function runProcess(
   command,
   args,
@@ -457,10 +571,11 @@ export function createGitCheckout({ directory, runner = runGitCheckout } = {}) {
         "submodule.recurse=false",
         "clone",
         "--no-checkout",
+        "--no-recurse-submodules",
         url,
         directory,
       ],
-      { env: environment },
+      checkoutOptions(environment),
     );
     await runner(
       "git",
@@ -475,8 +590,16 @@ export function createGitCheckout({ directory, runner = runGitCheckout } = {}) {
         "--detach",
         commit,
       ],
-      { env: environment },
+      checkoutOptions(environment),
     );
+    const { stdout } = await runner(
+      "git",
+      ["-C", directory, "rev-parse", "--verify", "HEAD"],
+      checkoutOptions(environment),
+    );
+    if (stdout.trim() !== commit) {
+      throw new Error("O checkout não corresponde ao SHA solicitado");
+    }
     return {
       templateDirectory: directory,
       cleanup: () => rm(directory, { recursive: true, force: true }),
@@ -484,8 +607,17 @@ export function createGitCheckout({ directory, runner = runGitCheckout } = {}) {
   };
 }
 
+function checkoutOptions(env) {
+  return {
+    env,
+    encoding: "utf8",
+    timeout: PROCESS_TIMEOUT_MS,
+    maxBuffer: PROCESS_MAX_OUTPUT_BYTES,
+  };
+}
+
 async function runGitCheckout(command, args, options) {
-  return execFile(command, args, { ...options, encoding: "utf8" });
+  return execFile(command, args, options);
 }
 
 export async function copyTemplateTree(source, destination) {

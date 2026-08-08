@@ -13,7 +13,10 @@ import test from "node:test";
 
 import {
   copyTemplateTree,
+  createDockerAdapter,
+  createGitCheckout,
   createGitTagResolver,
+  createLoopbackHttpClient,
   createRegistryIntegrationEngine,
   renderTrustedProfile,
   selectIntegrationTargets,
@@ -205,6 +208,55 @@ test("rejeita alvo não validado antes de chamar git", async () => {
     /deve ter sido validado pelo registry v2/,
   );
   assert.equal(called, false);
+});
+
+test("checkout usa limites, desabilita prompts e confirma HEAD destacado no SHA", async () => {
+  const calls = [];
+  const checkout = createGitCheckout({
+    directory: "checkout",
+    runner: async (command, args, options) => {
+      calls.push({ command, args, options });
+      return { stdout: args.includes("rev-parse") ? `${target.commit}\n` : "" };
+    },
+  });
+
+  await checkout({ repository: target.repository, commit: target.commit });
+
+  assert.equal(calls.length, 3);
+  assert.deepEqual(calls[0].args.slice(4, 7), [
+    "clone",
+    "--no-checkout",
+    "--no-recurse-submodules",
+  ]);
+  assert.deepEqual(calls[2].args, [
+    "-C",
+    "checkout",
+    "rev-parse",
+    "--verify",
+    "HEAD",
+  ]);
+  for (const call of calls) {
+    assert.equal(call.options.timeout, 120000);
+    assert.equal(call.options.maxBuffer, 65536);
+    assert.equal(call.options.env.GIT_TERMINAL_PROMPT, "0");
+    assert.equal(call.options.env.GCM_INTERACTIVE, "Never");
+  }
+});
+
+test("checkout falha quando HEAD não é o SHA solicitado", async () => {
+  const checkout = createGitCheckout({
+    directory: "checkout",
+    runner: async (_command, args) => ({
+      stdout: args.includes("rev-parse")
+        ? "a437e631948a6e0c51cf544ddcb0943cb92aa389\n"
+        : "",
+    }),
+  });
+
+  await assert.rejects(
+    () => checkout({ repository: target.repository, commit: target.commit }),
+    /não corresponde ao SHA solicitado/,
+  );
 });
 
 test("aceita manifesto regular correspondente ao alvo", async () => {
@@ -544,6 +596,73 @@ test("falha fechada para token desconhecido e variável obrigatória não suport
       /variável obrigatória/,
     );
   });
+});
+
+test("adaptadores Docker e HTTP mantêm os limites e recusam destinos não confiáveis", async () => {
+  const calls = [];
+  const docker = createDockerAdapter({
+    runner: async (command, args, options) =>
+      calls.push({ command, args, options }),
+  });
+  await docker.run({
+    args: ["build", "--tag", "registry-harness-api", "."],
+    cwd: "workspace",
+    timeoutMs: 120000,
+    maxOutputBytes: 65536,
+  });
+  await docker.cleanup({
+    container: "registry-harness-api-smoke",
+    image: "registry-harness-api",
+  });
+  assert.deepEqual(
+    calls.map(({ command, args }) => [command, args[0]]),
+    [
+      ["docker", "build"],
+      ["docker", "rm"],
+      ["docker", "image"],
+    ],
+  );
+  assert.equal(calls[0].options.timeoutMs, 120000);
+  assert.equal(calls[0].options.maxOutputBytes, 65536);
+  await assert.rejects(
+    () =>
+      docker.run({
+        args: ["run", "--privileged", "registry-harness-api"],
+        cwd: "workspace",
+        timeoutMs: 120000,
+        maxOutputBytes: 65536,
+      }),
+    /argumentos internos fixos/,
+  );
+
+  const http = createLoopbackHttpClient();
+  await assert.rejects(
+    () =>
+      http.get({
+        url: "http://example.test/health",
+        timeoutMs: 120000,
+        maxOutputBytes: 65536,
+      }),
+    /loopback confiável/,
+  );
+});
+
+test("falha do adaptador Docker ainda tenta remover container e imagem", async () => {
+  const calls = [];
+  const docker = createDockerAdapter({
+    runner: async (_command, args) => {
+      calls.push(args[0]);
+      if (args[0] === "build") throw new Error("falha interna");
+    },
+  });
+  const engine = createFakeEngine({
+    events: [],
+    docker,
+    http: { get: async () => ({ status: 200, body: { status: "ok" } }) },
+  });
+
+  await assert.rejects(() => engine(target), /Docker build/);
+  assert.deepEqual(calls, ["build", "rm", "image"]);
 });
 
 test("Docker é opcional e, quando habilitado, faz smoke e cleanup", async () => {
