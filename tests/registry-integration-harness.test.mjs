@@ -12,7 +12,10 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  copyTemplateTree,
   createGitTagResolver,
+  createRegistryIntegrationEngine,
+  renderTrustedProfile,
   selectIntegrationTargets,
   validateTrustedManifest,
 } from "../scripts/registry-integration-harness.mjs";
@@ -309,4 +312,294 @@ test("rejeita render fora do template, arquivos não regulares e diretórios sym
       );
     },
   );
+});
+
+async function withProfileTree(run) {
+  const directory = await mkdtemp(
+    join(tmpdir(), "registry-integration-profile-"),
+  );
+  const manifest = JSON.parse(
+    await readFile(
+      new URL("./fixtures/manifest-v1/valid.json", import.meta.url),
+    ),
+  );
+  manifest.variables.push({
+    name: "description",
+    prompt: "Descrição",
+    required: false,
+  });
+  manifest.render.include = ["package.json", "package-lock.json", "README.md"];
+  await Promise.all([
+    writeFile(
+      join(directory, "package.json"),
+      JSON.stringify({
+        name: "{{projectName}}",
+        description: "{{description}}",
+      }),
+    ),
+    writeFile(
+      join(directory, "package-lock.json"),
+      JSON.stringify({
+        name: "{{projectName}}",
+        packages: { "": { name: "{{projectName}}" } },
+      }),
+    ),
+    writeFile(
+      join(directory, "README.md"),
+      "# {{projectName}}\n\n{{description}}\n",
+    ),
+    writeFile(join(directory, "template.json"), JSON.stringify(manifest)),
+  ]);
+  try {
+    return await run({ directory, manifest });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+function createFakeEngine({ events, ...overrides } = {}) {
+  return createRegistryIntegrationEngine({
+    resolveTag: async (value) => {
+      events.push("resolve");
+      return value;
+    },
+    checkout: async (value) => {
+      events.push(
+        `checkout:${Object.keys(value).sort().join(",")}:${value.commit}`,
+      );
+      return {
+        templateDirectory: "source",
+        cleanup: async () => events.push("checkout-cleanup"),
+      };
+    },
+    validateManifest: async () => {
+      events.push("preflight");
+      return {
+        id: target.id,
+        variables: [{ name: "projectName", required: true }],
+      };
+    },
+    createWorkspace: async () => {
+      events.push("workspace");
+      return "output";
+    },
+    copyTemplate: async () => events.push("copy"),
+    renderProfile: async () => events.push("render"),
+    processRunner: async ({
+      command,
+      args,
+      env,
+      timeoutMs,
+      maxOutputBytes,
+    }) => {
+      events.push(`${command} ${args.join(" ")}`);
+      assert.equal(env.REGISTRY_SECRET_SENTINEL, undefined);
+      assert.equal(timeoutMs, 120000);
+      assert.equal(maxOutputBytes, 65536);
+    },
+    removeWorkspace: async () => events.push("workspace-cleanup"),
+    ...overrides,
+  });
+}
+
+test("orquestra tag, checkout por commit, preflight, cópia, render e comandos fixos em ordem", async () => {
+  const events = [];
+  const engine = createFakeEngine({ events });
+
+  await engine(target);
+
+  assert.deepEqual(events, [
+    "resolve",
+    `checkout:commit,repository:${target.commit}`,
+    "preflight",
+    "workspace",
+    "copy",
+    "render",
+    "npm ci",
+    "npm run check",
+    "workspace-cleanup",
+    "checkout-cleanup",
+  ]);
+});
+
+test("não faz checkout quando a resolução anotada diverge", async () => {
+  const events = [];
+  const engine = createFakeEngine({
+    events,
+    resolveTag: async () => {
+      events.push("resolve");
+      throw new Error("tag divergente");
+    },
+  });
+
+  await assert.rejects(() => engine(target), /resolução da tag/);
+  assert.deepEqual(events, ["resolve"]);
+});
+
+test("interrompe após npm ci falhar e não encaminha sentinel secreto", async () => {
+  const previous = process.env.REGISTRY_SECRET_SENTINEL;
+  process.env.REGISTRY_SECRET_SENTINEL = "não-vaze";
+  const events = [];
+  const engine = createFakeEngine({
+    events,
+    processRunner: async ({ args, env }) => {
+      events.push(`npm ${args.join(" ")}`);
+      assert.equal(env.REGISTRY_SECRET_SENTINEL, undefined);
+      if (args[0] === "ci") throw new Error("stderr secreto");
+    },
+  });
+
+  try {
+    await assert.rejects(() => engine(target), /npm ci/);
+  } finally {
+    if (previous === undefined) delete process.env.REGISTRY_SECRET_SENTINEL;
+    else process.env.REGISTRY_SECRET_SENTINEL = previous;
+  }
+  assert.deepEqual(events, [
+    "resolve",
+    `checkout:commit,repository:${target.commit}`,
+    "preflight",
+    "workspace",
+    "copy",
+    "render",
+    "npm ci",
+    "workspace-cleanup",
+    "checkout-cleanup",
+  ]);
+});
+
+test("copia a árvore inteira, ignora .git e rejeita symlink fora de render.include", async () => {
+  await withProfileTree(async ({ directory, manifest }) => {
+    manifest.render.include = ["package.json"];
+    await writeFile(join(directory, "template.json"), JSON.stringify(manifest));
+    await mkdir(join(directory, ".git"));
+    await writeFile(join(directory, ".git", "config"), "ignored");
+    await symlink(
+      join(directory, "README.md"),
+      join(directory, "unexpected-link"),
+    );
+    const output = await mkdtemp(join(tmpdir(), "registry-integration-copy-"));
+    try {
+      await assert.rejects(
+        () => copyTemplateTree(directory, output),
+        /links simbólicos/,
+      );
+    } finally {
+      await rm(output, { recursive: true, force: true });
+    }
+  });
+});
+
+test("renderiza JSON estruturado e README exclusivamente com o profile confiável", async () => {
+  await withProfileTree(async ({ directory, manifest }) => {
+    await renderTrustedProfile(directory, manifest);
+    assert.deepEqual(
+      JSON.parse(await readFile(join(directory, "package.json"), "utf8")),
+      {
+        name: "registry-harness-api",
+        description: "API criada pelo registry integration harness",
+      },
+    );
+    assert.equal(
+      JSON.parse(await readFile(join(directory, "package-lock.json"), "utf8"))
+        .packages[""].name,
+      "registry-harness-api",
+    );
+    assert.equal(
+      await readFile(join(directory, "README.md"), "utf8"),
+      "# registry-harness-api\n\nAPI criada pelo registry integration harness\n",
+    );
+  });
+});
+
+test("falha fechada para token desconhecido e variável obrigatória não suportada", async () => {
+  await withProfileTree(async ({ directory, manifest }) => {
+    await writeFile(join(directory, "README.md"), "{{unknown}}\n");
+    await assert.rejects(
+      () => renderTrustedProfile(directory, manifest),
+      /token não suportado/,
+    );
+
+    await writeFile(
+      join(directory, "package.json"),
+      JSON.stringify({
+        name: "{{projectName}}",
+        description: "{{description}}",
+        scripts: { check: "echo {{projectName}}" },
+      }),
+    );
+    await writeFile(join(directory, "README.md"), "# {{projectName}}\n");
+    await assert.rejects(
+      () => renderTrustedProfile(directory, manifest),
+      /token sem resolução/,
+    );
+
+    manifest.variables.push({
+      name: "region",
+      prompt: "Região",
+      required: true,
+    });
+    await assert.rejects(
+      () => renderTrustedProfile(directory, manifest),
+      /variável obrigatória/,
+    );
+  });
+});
+
+test("Docker é opcional e, quando habilitado, faz smoke e cleanup", async () => {
+  const noDockerEvents = [];
+  await createFakeEngine({ events: noDockerEvents })(target);
+  assert.equal(
+    noDockerEvents.some((event) => event.startsWith("docker")),
+    false,
+  );
+
+  const events = [];
+  const docker = {
+    run: async ({ args }) => events.push(`docker ${args[0]}`),
+    cleanup: async ({ container, image }) =>
+      events.push(`cleanup:${container}:${image}`),
+  };
+  const engine = createFakeEngine({
+    events,
+    docker,
+    http: {
+      get: async ({ url }) => {
+        events.push(`http:${url}`);
+        return { status: 200, body: { status: "ok" } };
+      },
+    },
+  });
+
+  await engine(target);
+  assert.deepEqual(events.slice(-6), [
+    "docker build",
+    "docker run",
+    "http:http://127.0.0.1:39000/health",
+    "cleanup:registry-harness-api-smoke:registry-harness-api",
+    "workspace-cleanup",
+    "checkout-cleanup",
+  ]);
+});
+
+test("falha Docker ainda limpa container, workspace e checkout", async () => {
+  const events = [];
+  const engine = createFakeEngine({
+    events,
+    docker: {
+      run: async () => {
+        events.push("docker build");
+        throw new Error("stderr secreto");
+      },
+      cleanup: async () => events.push("docker-cleanup"),
+    },
+    http: { get: async () => ({ status: 200, body: { status: "ok" } }) },
+  });
+
+  await assert.rejects(() => engine(target), /Docker build/);
+  assert.deepEqual(events.slice(-3), [
+    "docker-cleanup",
+    "workspace-cleanup",
+    "checkout-cleanup",
+  ]);
 });

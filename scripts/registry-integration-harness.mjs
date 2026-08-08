@@ -1,6 +1,16 @@
 import { execFile as execFileCallback } from "node:child_process";
-import { lstat, readFile } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import {
+  copyFile,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 
 import Ajv from "ajv";
@@ -242,5 +252,381 @@ async function assertDirectoryWithoutSymlinks(rootPath, candidateRelative) {
         "O caminho de render não pode atravessar links simbólicos",
       );
     }
+  }
+}
+
+const HARNESS_PROFILE = Object.freeze({
+  id: "api-nodejs-typescript",
+  projectName: "registry-harness-api",
+  description: "API criada pelo registry integration harness",
+  docker: Object.freeze({
+    image: "registry-harness-api",
+    container: "registry-harness-api-smoke",
+    hostPort: "39000",
+    containerPort: "3000",
+    healthPath: "/health",
+  }),
+});
+const PROCESS_TIMEOUT_MS = 120_000;
+const PROCESS_MAX_OUTPUT_BYTES = 64 * 1024;
+const TOKEN = /{{([A-Za-z][A-Za-z0-9_]*)}}/g;
+
+export function createRegistryIntegrationEngine({
+  resolveTag = createGitTagResolver(),
+  checkout,
+  processRunner = createProcessRunner(),
+  docker,
+  http,
+  validateManifest = validateTrustedManifest,
+  copyTemplate = copyTemplateTree,
+  renderProfile = renderTrustedProfile,
+  createWorkspace = () => mkdtemp(join(tmpdir(), "registry-integration-")),
+  removeWorkspace = (directory) =>
+    rm(directory, { recursive: true, force: true }),
+} = {}) {
+  if (typeof checkout !== "function") {
+    throw new Error("O engine exige um checkout confiável");
+  }
+
+  return async function runIntegration(target) {
+    assertValidatedTarget(target);
+    let checkedOut;
+    let workspace;
+    let dockerStarted = false;
+
+    try {
+      const resolved = await runPhase(target, "resolução da tag", () =>
+        resolveTag(target),
+      );
+      checkedOut = await runPhase(target, "checkout", () =>
+        checkout({ repository: resolved.repository, commit: resolved.commit }),
+      );
+      const templateDirectory = checkedOut.templateDirectory ?? checkedOut;
+      const manifest = await runPhase(target, "preflight do manifesto", () =>
+        validateManifest({ templateDirectory, target: resolved }),
+      );
+      await runPhase(target, "profile confiável", () =>
+        assertTrustedProfile(resolved, manifest),
+      );
+      workspace = await runPhase(target, "materialização", createWorkspace);
+      await runPhase(target, "cópia segura", () =>
+        copyTemplate(templateDirectory, workspace),
+      );
+      await runPhase(target, "renderização", () =>
+        renderProfile(workspace, manifest),
+      );
+      await runPhase(target, "npm ci", () =>
+        processRunner(fixedProcess("npm", ["ci"], workspace)),
+      );
+      await runPhase(target, "npm run check", () =>
+        processRunner(fixedProcess("npm", ["run", "check"], workspace)),
+      );
+
+      if (docker !== undefined) {
+        dockerStarted = true;
+        await runPhase(target, "Docker build", () =>
+          docker.run({
+            args: ["build", "--tag", HARNESS_PROFILE.docker.image, "."],
+            cwd: workspace,
+            timeoutMs: PROCESS_TIMEOUT_MS,
+            maxOutputBytes: PROCESS_MAX_OUTPUT_BYTES,
+          }),
+        );
+        await runPhase(target, "Docker run", () =>
+          docker.run({
+            args: [
+              "run",
+              "--detach",
+              "--rm",
+              "--name",
+              HARNESS_PROFILE.docker.container,
+              "--publish",
+              `127.0.0.1:${HARNESS_PROFILE.docker.hostPort}:${HARNESS_PROFILE.docker.containerPort}`,
+              "--cap-drop",
+              "ALL",
+              "--security-opt",
+              "no-new-privileges",
+              HARNESS_PROFILE.docker.image,
+            ],
+            cwd: workspace,
+            timeoutMs: PROCESS_TIMEOUT_MS,
+            maxOutputBytes: PROCESS_MAX_OUTPUT_BYTES,
+          }),
+        );
+        await runPhase(target, "smoke HTTP", async () => {
+          const response = await http.get({
+            url: `http://127.0.0.1:${HARNESS_PROFILE.docker.hostPort}${HARNESS_PROFILE.docker.healthPath}`,
+            timeoutMs: PROCESS_TIMEOUT_MS,
+            maxOutputBytes: PROCESS_MAX_OUTPUT_BYTES,
+          });
+          if (
+            response.status !== 200 ||
+            JSON.stringify(response.body) !== JSON.stringify({ status: "ok" })
+          ) {
+            throw new Error("Resposta de health inválida");
+          }
+        });
+      }
+    } finally {
+      if (dockerStarted) {
+        await cleanupQuietly(() =>
+          docker.cleanup({
+            container: HARNESS_PROFILE.docker.container,
+            image: HARNESS_PROFILE.docker.image,
+          }),
+        );
+      }
+      if (workspace !== undefined) {
+        await cleanupQuietly(() => removeWorkspace(workspace));
+      }
+      if (checkedOut?.cleanup !== undefined) {
+        await cleanupQuietly(() => checkedOut.cleanup());
+      }
+    }
+  };
+}
+
+function fixedProcess(command, args, cwd) {
+  return {
+    command,
+    args,
+    cwd,
+    env: { PATH: process.env.PATH ?? "" },
+    timeoutMs: PROCESS_TIMEOUT_MS,
+    maxOutputBytes: PROCESS_MAX_OUTPUT_BYTES,
+  };
+}
+
+async function runPhase(target, phase, operation) {
+  try {
+    return await operation();
+  } catch {
+    throw new Error(
+      `Falha na integração de ${target.id} ref ${target.ref} commit ${target.commit} durante ${phase}`,
+    );
+  }
+}
+
+async function cleanupQuietly(cleanup) {
+  try {
+    await cleanup();
+  } catch {
+    // A falha principal já é sanitizada; cleanup não pode expor dados externos.
+  }
+}
+
+export function createProcessRunner({ runner = runProcess } = {}) {
+  return (options) => runner(options.command, options.args, options);
+}
+
+async function runProcess(
+  command,
+  args,
+  { cwd, env, timeoutMs, maxOutputBytes },
+) {
+  return execFile(command, args, {
+    cwd,
+    env,
+    encoding: "utf8",
+    timeout: timeoutMs,
+    maxBuffer: maxOutputBytes,
+  });
+}
+
+export function createGitCheckout({ directory, runner = runGitCheckout } = {}) {
+  if (typeof directory !== "string" || directory.length === 0) {
+    throw new Error("O checkout confiável exige um diretório de destino");
+  }
+
+  return async function checkout({ repository, commit }) {
+    if (!REPOSITORY.test(repository) || !SHA40.test(commit)) {
+      throw new Error("O checkout exige repository e commit validados");
+    }
+    const url = `https://github.com/${repository}.git`;
+    const environment = {
+      PATH: process.env.PATH ?? "",
+      GIT_TERMINAL_PROMPT: "0",
+      GCM_INTERACTIVE: "Never",
+    };
+    await runner(
+      "git",
+      [
+        "-c",
+        "credential.helper=",
+        "-c",
+        "submodule.recurse=false",
+        "clone",
+        "--no-checkout",
+        url,
+        directory,
+      ],
+      { env: environment },
+    );
+    await runner(
+      "git",
+      [
+        "-C",
+        directory,
+        "-c",
+        "credential.helper=",
+        "-c",
+        "submodule.recurse=false",
+        "checkout",
+        "--detach",
+        commit,
+      ],
+      { env: environment },
+    );
+    return {
+      templateDirectory: directory,
+      cleanup: () => rm(directory, { recursive: true, force: true }),
+    };
+  };
+}
+
+async function runGitCheckout(command, args, options) {
+  return execFile(command, args, { ...options, encoding: "utf8" });
+}
+
+export async function copyTemplateTree(source, destination) {
+  await assertRegularDirectory(source, "A origem do template");
+  await mkdir(destination, { recursive: true });
+  await assertRegularDirectory(destination, "O destino do template");
+  await copyTree(source, destination, destination);
+}
+
+async function copyTree(source, destination, destinationRoot) {
+  for (const entry of await readdir(source, { withFileTypes: true })) {
+    if (entry.name === ".git") continue;
+    const sourcePath = join(source, entry.name);
+    const destinationPath = assertContainedOutput(
+      destinationRoot,
+      join(destination, entry.name),
+    );
+    const details = await lstat(sourcePath);
+    if (details.isSymbolicLink()) {
+      throw new Error("A árvore do template não pode conter links simbólicos");
+    }
+    if (details.isDirectory()) {
+      await mkdir(destinationPath);
+      await copyTree(sourcePath, destinationPath, destinationRoot);
+    } else if (details.isFile()) {
+      await copyFile(sourcePath, destinationPath);
+    } else {
+      throw new Error("A árvore do template contém uma entrada não suportada");
+    }
+  }
+}
+
+function assertContainedOutput(root, candidate) {
+  const rootPath = resolve(root);
+  const candidatePath = resolve(candidate);
+  const candidateRelative = relative(rootPath, candidatePath);
+  if (
+    candidateRelative === "" ||
+    candidateRelative === ".." ||
+    candidateRelative.startsWith(`..${sep}`) ||
+    isAbsolute(candidateRelative)
+  ) {
+    throw new Error("A saída da materialização deve permanecer contida");
+  }
+  return candidatePath;
+}
+
+async function assertRegularDirectory(directory, label) {
+  const details = await lstat(directory);
+  if (!details.isDirectory() || details.isSymbolicLink()) {
+    throw new Error(`${label} deve ser um diretório regular`);
+  }
+}
+
+export async function renderTrustedProfile(directory, manifest) {
+  assertTrustedProfile({ id: manifest.id }, manifest);
+  const values = {
+    projectName: HARNESS_PROFILE.projectName,
+    description: HARNESS_PROFILE.description,
+  };
+  await renderPackageJson(join(directory, "package.json"), values);
+  await renderPackageLock(join(directory, "package-lock.json"), values);
+  await renderReadme(join(directory, "README.md"), values);
+}
+
+function assertTrustedProfile(target, manifest) {
+  if (target.id !== HARNESS_PROFILE.id || manifest.id !== HARNESS_PROFILE.id) {
+    throw new Error("Não existe profile confiável para este template");
+  }
+  for (const variable of manifest.variables) {
+    if (
+      variable.required &&
+      variable.name !== "projectName" &&
+      variable.name !== "description"
+    ) {
+      throw new Error(
+        "O profile não suporta uma variável obrigatória do manifesto",
+      );
+    }
+  }
+}
+
+async function renderPackageJson(path, values) {
+  const document = await readJson(path);
+  document.name = renderExactKnownToken(document.name, values);
+  document.description = renderExactKnownToken(document.description, values);
+  assertNoTokens(document);
+  await writeFile(path, `${JSON.stringify(document, null, 2)}\n`);
+}
+
+async function renderPackageLock(path, values) {
+  const document = await readJson(path);
+  document.name = renderExactKnownToken(document.name, values);
+  if (document.packages?.[""] !== undefined) {
+    document.packages[""].name = renderExactKnownToken(
+      document.packages[""].name,
+      values,
+    );
+  }
+  assertNoTokens(document);
+  await writeFile(path, `${JSON.stringify(document, null, 2)}\n`);
+}
+
+async function renderReadme(path, values) {
+  const contents = await readFile(path, "utf8");
+  await writeFile(path, renderTokens(contents, values));
+}
+
+async function readJson(path) {
+  try {
+    return JSON.parse(await readFile(path, "utf8"));
+  } catch {
+    throw new Error("O arquivo JSON do profile confiável é inválido");
+  }
+}
+
+function renderExactKnownToken(value, values) {
+  if (typeof value !== "string")
+    throw new Error("Campo JSON do profile é inválido");
+  return renderTokens(value, values);
+}
+
+function renderTokens(value, values) {
+  TOKEN.lastIndex = 0;
+  return value.replace(TOKEN, (_match, name) => {
+    if (!(name in values))
+      throw new Error("O profile encontrou token não suportado");
+    return values[name];
+  });
+}
+
+function assertNoTokens(value) {
+  if (typeof value === "string") {
+    TOKEN.lastIndex = 0;
+    if (TOKEN.test(value))
+      throw new Error("O profile deixou token sem resolução");
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach(assertNoTokens);
+  } else if (value !== null && typeof value === "object") {
+    Object.values(value).forEach(assertNoTokens);
   }
 }
