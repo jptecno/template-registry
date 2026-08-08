@@ -2,59 +2,80 @@
 
 Catálogo público e versionado dos templates consumidos pelo `@jptecno/cli`.
 
-## Catálogo
+## Estado da migração
 
-O arquivo [`registry.json`](./registry.json) é servido pelo GitHub Raw e contém os templates disponíveis. Cada entrada deve apontar para uma tag [SemVer 2.0.0](https://semver.org/lang/pt-BR/) com o prefixo `v`.
+A branch `development` carrega a preparação do contrato `schemaVersion: 2`. Esta preparação **não ativa** o contrato para consumidores: o endpoint atual da CLI continua sendo o `registry.json` v1 servido pelo GitHub Raw da branch `main`.
+
+Não há nesta etapa publicação em GitHub Pages, deploy de assinaturas, ativação de URL ou qualquer validação de rede. A migração para consumidores somente poderá ser coordenada após C01 e R07–R09 e C02; até então, `main` não pode ser promovida com base nesta preparação.
+
+## Catálogo v2 em desenvolvimento
+
+O arquivo [`registry.json`](./registry.json) na branch de desenvolvimento usa o contrato v2:
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "revision": 1,
+  "publishedAt": "2026-08-08T01:33:30Z",
   "templates": [
     {
       "id": "api-nodejs-typescript",
       "name": "API Node.js + TypeScript",
       "description": "Fastify, PostgreSQL, Kysely, Vitest e Biome.",
       "repository": "jptecno/template-api-nodejs-typescript",
-      "version": "v0.1.0",
-      "ref": "v0.1.0"
+      "versions": [
+        {
+          "version": "v0.1.0",
+          "ref": "v0.1.0",
+          "commit": "40feae0d0ecd789b5fd3b7b8bc1ba09b6a33a340",
+          "status": "active"
+        }
+      ]
     }
   ]
 }
 ```
 
-## Publicar um template
+### Semântica dos campos
+
+| Campo           | Semântica                                                                                                                          |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `schemaVersion` | Versão do contrato do catálogo; esta preparação usa `2`.                                                                           |
+| `revision`      | Revisão monotônica do documento v2. Uma correção publicada deve avançar a revisão, sem reutilizar uma revisão já publicada.        |
+| `publishedAt`   | Instante RFC3339 em UTC que identifica quando aquela revisão foi publicada.                                                        |
+| `id`            | Identificador estável em kebab-case, usado por `jp init --template`.                                                               |
+| `repository`    | Repositório do template, restrito à organização `jptecno`.                                                                         |
+| `version`       | Versão visível ao desenvolvedor, em tag SemVer estrita com prefixo `v`.                                                            |
+| `ref`           | A mesma tag SemVer de `version`; branches não são aceitas.                                                                         |
+| `commit`        | SHA Git de 40 caracteres minúsculos esperado para a versão. A validação local somente valida o formato e não consulta Git ou rede. |
+| `status`        | Estado da versão: exatamente uma versão por template deve ser `active`; `deprecated` e `revoked` exigem `statusReason`.            |
+| `statusReason`  | Justificativa não vazia para versão `deprecated` ou `revoked`. Não é permitida para `active`.                                      |
+| `replacement`   | `id` de outro template existente que substitui uma versão; não pode apontar para o próprio template.                               |
+
+O validador local também rejeita propriedades desconhecidas, IDs e versões duplicados, versões/ref divergentes e datas UTC semanticamente inválidas. Ele não executa conteúdo de templates, não resolve tags, não consulta DNS, Git ou APIs externas e não produz ou verifica assinaturas.
+
+## Validar localmente
+
+```sh
+npm ci --ignore-scripts
+npm run check
+```
+
+O comando de entrada é `node scripts/validate-registry.mjs`; ele valida o `registry.json` v2 localmente.
+
+## Publicar um template após a ativação coordenada
 
 1. Garanta que o template passa em sua validação local e CI.
-2. Publique uma tag SemVer, por exemplo `v1.0.0`.
-3. Adicione ou atualize a entrada em `registry.json`, apontando `version` e `ref` para a tag.
-4. Execute os testes e o validator localmente:
+2. Publique uma tag SemVer, por exemplo `v1.0.0`, e registre o SHA do commit correspondente.
+3. Atualize a versão no catálogo, seu estado e a próxima `revision`.
+4. Execute `npm run check`.
+5. Abra um pull request para `development`.
 
-   ```sh
-   node --test scripts/validate-registry.test.mjs
-   node scripts/validate-registry.mjs
-   ```
-
-5. Abra um pull request com a alteração do catálogo.
-
-O `id` deve ser único e usar kebab-case, como `api-nodejs-typescript`. `version` e `ref` devem ser idênticos e seguir SemVer estrito com prefixo `v`, incluindo versões de pré-lançamento e metadados de build válidos, quando necessários.
-
-Não use branches como `main` ou `develop` em `ref`. Tags são referências mutáveis no Git e esta validação não fornece imutabilidade criptográfica. Enquanto a migração para o contrato com commit e assinatura não estiver concluída, mantenha as tags protegidas no repositório do template e não as mova após a publicação.
+A publicação/ativação para consumidores e a promoção para `main` permanecem bloqueadas até a conclusão coordenada de C01, R07, R08, R09 e C02.
 
 ## Schema
 
-| Campo           | Descrição                                                |
-| --------------- | -------------------------------------------------------- |
-| `schemaVersion` | Versão do contrato do catálogo.                          |
-| `id`            | Identificador estável, usado por `jp init --template`.   |
-| `name`          | Nome apresentado no seletor interativo.                  |
-| `description`   | Descrição curta apresentada no seletor.                  |
-| `repository`    | Repositório GitHub no formato `organização/repositório`. |
-| `version`       | Versão visível para o desenvolvedor.                     |
-| `ref`           | Tag SemVer que o CLI resolve para baixar o template.     |
-
-## Evolução do contrato
-
-O contrato futuro com `commit`, histórico de versões e assinatura está especificado em [`docs/hardening-plan.md`](./docs/hardening-plan.md). Esses campos ainda não são obrigatórios nem são interpretados pelo validador atual.
+O schema canônico está em [`schemas/template-registry-v2.schema.json`](./schemas/template-registry-v2.schema.json). Schemas publicados são imutáveis; propriedades que exigem relações entre registros são validadas no código semântico.
 
 ## Proteção das branches
 
