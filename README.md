@@ -6,7 +6,7 @@ Catálogo público e versionado dos templates consumidos pelo `@jptecno/cli`.
 
 A branch `development` carrega a preparação do contrato `schemaVersion: 2`. Esta preparação **não ativa** o contrato para consumidores: o endpoint atual da CLI continua sendo o `registry.json` v1 servido pelo GitHub Raw da branch `main`.
 
-Não há nesta etapa publicação em GitHub Pages, deploy de assinaturas, ativação de URL ou qualquer validação de rede. A migração para consumidores somente poderá ser coordenada após C01 e R07–R09 e C02; até então, `main` não pode ser promovida com base nesta preparação.
+A integração ao workflow permanece uma ativação separada e pendente. Não há nesta etapa publicação em GitHub Pages, deploy de assinaturas, ativação de endpoint oficial da CLI, URL ou qualquer validação de rede. A migração para consumidores somente poderá ser coordenada após C01 e R07–R09 e C02; até então, `main` não pode ser promovida com base nesta preparação.
 
 ## Catálogo v2 em desenvolvimento
 
@@ -15,8 +15,8 @@ O arquivo [`registry.json`](./registry.json) na branch de desenvolvimento usa o 
 ```json
 {
   "schemaVersion": 2,
-  "revision": 1,
-  "publishedAt": "2026-08-08T01:33:30Z",
+  "revision": 2,
+  "publishedAt": "2026-08-08T13:32:04Z",
   "templates": [
     {
       "id": "api-nodejs-typescript",
@@ -28,6 +28,13 @@ O arquivo [`registry.json`](./registry.json) na branch de desenvolvimento usa o 
           "version": "v0.1.0",
           "ref": "v0.1.0",
           "commit": "40feae0d0ecd789b5fd3b7b8bc1ba09b6a33a340",
+          "status": "deprecated",
+          "statusReason": "Substituída pela v0.2.0, que atualiza a toolchain e incorpora endurecimentos de segurança."
+        },
+        {
+          "version": "v0.2.0",
+          "ref": "v0.2.0",
+          "commit": "d437e631948a6e0c51cf544ddcb0943cb92aa389",
           "status": "active"
         }
       ]

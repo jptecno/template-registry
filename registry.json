@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "revision": 1,
-  "publishedAt": "2026-08-08T01:33:30Z",
+  "revision": 2,
+  "publishedAt": "2026-08-08T13:32:04Z",
   "templates": [
     {
       "id": "api-nodejs-typescript",
@@ -13,6 +13,13 @@
           "version": "v0.1.0",
           "ref": "v0.1.0",
           "commit": "40feae0d0ecd789b5fd3b7b8bc1ba09b6a33a340",
+          "status": "deprecated",
+          "statusReason": "Substituída pela v0.2.0, que atualiza a toolchain e incorpora endurecimentos de segurança."
+        },
+        {
+          "version": "v0.2.0",
+          "ref": "v0.2.0",
+          "commit": "d437e631948a6e0c51cf544ddcb0943cb92aa389",
           "status": "active"
         }
       ]
