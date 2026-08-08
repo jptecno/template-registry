@@ -269,11 +269,15 @@ const HARNESS_PROFILE = Object.freeze({
     container: "registry-harness-api-smoke",
     hostPort: "39000",
     containerPort: "3000",
+    databaseUrl:
+      "postgresql://registry-harness@127.0.0.1:5432/registry-harness",
     healthPath: "/health",
   }),
 });
 const PROCESS_TIMEOUT_MS = 120_000;
 const PROCESS_MAX_OUTPUT_BYTES = 64 * 1024;
+const HEALTH_ATTEMPTS = 10;
+const HEALTH_RETRY_DELAY_MS = 500;
 const TOKEN = /{{([A-Za-z][A-Za-z0-9_]*)}}/g;
 
 export function createRegistryIntegrationEngine({
@@ -347,6 +351,8 @@ export function createRegistryIntegrationEngine({
               HARNESS_PROFILE.docker.container,
               "--publish",
               `127.0.0.1:${HARNESS_PROFILE.docker.hostPort}:${HARNESS_PROFILE.docker.containerPort}`,
+              "--env",
+              `DATABASE_URL=${HARNESS_PROFILE.docker.databaseUrl}`,
               "--cap-drop",
               "ALL",
               "--security-opt",
@@ -358,19 +364,7 @@ export function createRegistryIntegrationEngine({
             maxOutputBytes: PROCESS_MAX_OUTPUT_BYTES,
           }),
         );
-        await runPhase(target, "smoke HTTP", async () => {
-          const response = await http.get({
-            url: `http://127.0.0.1:${HARNESS_PROFILE.docker.hostPort}${HARNESS_PROFILE.docker.healthPath}`,
-            timeoutMs: PROCESS_TIMEOUT_MS,
-            maxOutputBytes: PROCESS_MAX_OUTPUT_BYTES,
-          });
-          if (
-            response.status !== 200 ||
-            JSON.stringify(response.body) !== JSON.stringify({ status: "ok" })
-          ) {
-            throw new Error("Resposta de health inválida");
-          }
-        });
+        await runPhase(target, "smoke HTTP", () => waitForHealthy(http));
       }
     } finally {
       if (dockerStarted) {
@@ -470,6 +464,8 @@ function assertTrustedDockerArgs(args) {
     HARNESS_PROFILE.docker.container,
     "--publish",
     `127.0.0.1:${HARNESS_PROFILE.docker.hostPort}:${HARNESS_PROFILE.docker.containerPort}`,
+    "--env",
+    `DATABASE_URL=${HARNESS_PROFILE.docker.databaseUrl}`,
     "--cap-drop",
     "ALL",
     "--security-opt",
@@ -486,6 +482,37 @@ function assertTrustedDockerArgs(args) {
   ) {
     throw new Error("A execução Docker deve usar argumentos internos fixos");
   }
+}
+
+export async function waitForHealthy(
+  http,
+  {
+    attempts = HEALTH_ATTEMPTS,
+    sleep = (milliseconds) =>
+      new Promise((resolve) => setTimeout(resolve, milliseconds)),
+  } = {},
+) {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await http.get({
+        url: `http://127.0.0.1:${HARNESS_PROFILE.docker.hostPort}${HARNESS_PROFILE.docker.healthPath}`,
+        timeoutMs: PROCESS_TIMEOUT_MS,
+        maxOutputBytes: PROCESS_MAX_OUTPUT_BYTES,
+      });
+      if (
+        response.status === 200 &&
+        JSON.stringify(response.body) === JSON.stringify({ status: "ok" })
+      ) {
+        return;
+      }
+    } catch {
+      // A aplicação pode ainda estar iniciando; a tentativa limitada evita corrida.
+    }
+
+    if (attempt < attempts) await sleep(HEALTH_RETRY_DELAY_MS);
+  }
+
+  throw new Error("O health não ficou disponível dentro do limite do smoke");
 }
 
 export function createLoopbackHttpClient({ fetchImpl = fetch } = {}) {

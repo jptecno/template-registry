@@ -21,6 +21,7 @@ import {
   renderTrustedProfile,
   selectIntegrationTargets,
   validateTrustedManifest,
+  waitForHealthy,
 } from "../scripts/registry-integration-harness.mjs";
 
 const target = {
@@ -623,6 +624,27 @@ test("adaptadores Docker e HTTP mantêm os limites e recusam destinos não confi
     timeoutMs: 120000,
     maxOutputBytes: 65536,
   });
+  await docker.run({
+    args: [
+      "run",
+      "--detach",
+      "--rm",
+      "--name",
+      "registry-harness-api-smoke",
+      "--publish",
+      "127.0.0.1:39000:3000",
+      "--env",
+      "DATABASE_URL=postgresql://registry-harness@127.0.0.1:5432/registry-harness",
+      "--cap-drop",
+      "ALL",
+      "--security-opt",
+      "no-new-privileges",
+      "registry-harness-api",
+    ],
+    cwd: "workspace",
+    timeoutMs: 120000,
+    maxOutputBytes: 65536,
+  });
   await docker.cleanup({
     container: "registry-harness-api-smoke",
     image: "registry-harness-api",
@@ -631,12 +653,17 @@ test("adaptadores Docker e HTTP mantêm os limites e recusam destinos não confi
     calls.map(({ command, args }) => [command, args[0]]),
     [
       ["docker", "build"],
+      ["docker", "run"],
       ["docker", "rm"],
       ["docker", "image"],
     ],
   );
   assert.equal(calls[0].options.timeoutMs, 120000);
   assert.equal(calls[0].options.maxOutputBytes, 65536);
+  assert.deepEqual(calls[1].args.slice(7, 9), [
+    "--env",
+    "DATABASE_URL=postgresql://registry-harness@127.0.0.1:5432/registry-harness",
+  ]);
   await assert.rejects(
     () =>
       docker.run({
@@ -657,6 +684,39 @@ test("adaptadores Docker e HTTP mantêm os limites e recusam destinos não confi
         maxOutputBytes: 65536,
       }),
     /loopback confiável/,
+  );
+});
+
+test("aguarda health ficar disponível com tentativas limitadas", async () => {
+  const attempts = [];
+  const delays = [];
+  const http = {
+    async get() {
+      attempts.push("health");
+      if (attempts.length === 1) throw new Error("conexão recusada");
+      if (attempts.length === 2)
+        return { status: 503, body: { status: "starting" } };
+      return { status: 200, body: { status: "ok" } };
+    },
+  };
+
+  await waitForHealthy(http, {
+    attempts: 3,
+    sleep: async (milliseconds) => delays.push(milliseconds),
+  });
+
+  assert.deepEqual(attempts, ["health", "health", "health"]);
+  assert.deepEqual(delays, [500, 500]);
+});
+
+test("falha quando o health não fica disponível no limite", async () => {
+  const http = {
+    get: async () => ({ status: 503, body: { status: "starting" } }),
+  };
+
+  await assert.rejects(
+    () => waitForHealthy(http, { attempts: 2, sleep: async () => {} }),
+    /health não ficou disponível/,
   );
 });
 
