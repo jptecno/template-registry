@@ -16,6 +16,7 @@ const registryDiff = files.includes("registry.json")
 const results = evaluatePullRequest({
   title: pullRequest.title,
   body: pullRequest.body,
+  author: pullRequest.user.login,
   baseBranch: pullRequest.base.ref,
   headBranch: pullRequest.head.ref,
   files: [...new Set(files)],
