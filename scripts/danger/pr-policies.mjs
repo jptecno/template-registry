@@ -29,7 +29,10 @@ export function evaluatePullRequest(facts) {
     failures.push('Use um título no formato Conventional Commits.');
   }
 
-  if (meaningfulText(section(body, 'Resumo')).length === 0) {
+  if (
+    facts.author !== 'dependabot[bot]' &&
+    meaningfulText(section(body, 'Resumo')).length === 0
+  ) {
     failures.push('Preencha a seção Resumo com uma descrição objetiva.');
   }
 
