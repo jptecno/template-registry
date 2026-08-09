@@ -59,6 +59,27 @@ describe('evaluatePullRequest', () => {
     ]);
   });
 
+  it('dispensa Resumo somente para pull requests do Dependabot', () => {
+    assert.deepEqual(
+      evaluatePullRequest(
+        facts({
+          author: 'dependabot[bot]',
+          body: '',
+          files: [],
+        }),
+      ),
+      { failures: [], warnings: [] },
+    );
+  });
+
+  it('mantém Resumo obrigatório para outros autores automatizados', () => {
+    assert.ok(
+      evaluatePullRequest(
+        facts({ author: 'github-actions[bot]', body: '', files: [] }),
+      ).failures.includes('Preencha a seção Resumo com uma descrição objetiva.'),
+    );
+  });
+
   it('reprova PR para main que não vem de development', () => {
     assert.ok(
       evaluatePullRequest(
