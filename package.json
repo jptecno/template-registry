@@ -17,6 +17,6 @@
     "@biomejs/biome": "2.5.7",
     "ajv": "8.20.0",
     "danger": "13.0.10",
-    "lefthook": "2.1.10"
+    "lefthook": "2.1.12"
   }
 }
