@@ -28,7 +28,7 @@ jobs:
     steps:
       - name: Review pull request
         continue-on-error: true
-        uses: qodo-ai/pr-agent@743f52d80f3513193dfc7626f778c73478df6d0a # v0.41.1
+        uses: qodo-ai/pr-agent@efdde4afe14aa401a3889012c7f3e9ef3081a430 # v0.49.0
         env:
           OPENAI_KEY: ${{ secrets.OPENAI_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
